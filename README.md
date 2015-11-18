@@ -2,7 +2,7 @@
 
 `dht` is a [distributed hash table][wiki_dht] implementation that uses Consul
 and [rendezvous hashing][wiki_rendez] to distribute keys among an arbitrary
-number of distributed notes. Because it uses rendezvous hashing to determine key
+number of distributed nodes. Because it uses rendezvous hashing to determine key
 placement, removing a node from the hash table is minimally disruptive in terms
 of key re-assignment.
 
