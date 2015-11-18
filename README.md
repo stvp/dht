@@ -21,7 +21,7 @@ allow Consul to periodically check that the node is still alive.
 
 ```go
 node1, err := dht.Join("worker", "worker-1")
-node2, err := dht.Join("worker", "worker-1")
+node2, err := dht.Join("worker", "worker-2")
 
 node1.Owns("some_key") // true
 node2.Owns("some_key") // false
