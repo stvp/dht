@@ -119,7 +119,7 @@ func (n *Node) poll() {
 		case <-time.After(pollWait):
 			err = n.update()
 			if err != nil {
-				n.logError(err)
+				log.Printf("[dht %s %s] error: %s", n.serviceName, n.serviceID, err)
 			}
 		}
 	}
@@ -143,10 +143,6 @@ func (n *Node) update() (err error) {
 	n.waitIndex = meta.LastIndex
 
 	return nil
-}
-
-func (n *Node) logError(err error) {
-	log.Printf("[dht %s %s] error: %s", n.serviceName, n.serviceID, err)
 }
 
 // Member returns true if the given key belongs to this Node in the distributed
