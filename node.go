@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/hashicorp/consul/api"
@@ -31,7 +30,6 @@ type Node struct {
 	checkServer   *http.Server
 
 	// Hash table
-	hashMutex sync.Mutex
 	hashTable *rendezvous.Table
 	waitIndex uint64
 
@@ -151,10 +149,8 @@ func (n *Node) fetchState() (c chan tableState) {
 }
 
 func (n *Node) updateState(state tableState) {
-	n.hashMutex.Lock()
 	n.hashTable = rendezvous.New(state.ids)
 	n.waitIndex = state.index
-	n.hashMutex.Unlock()
 }
 
 func (n *Node) pollState() {
