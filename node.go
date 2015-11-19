@@ -113,39 +113,43 @@ type tableState struct {
 	err   error
 }
 
+func (s *tableState) contains(id string) bool {
+	for _, id := range s.ids {
+		if id == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (n *Node) fetchState() (c chan tableState) {
 	c = make(chan tableState)
 	go func() {
-		state := tableState{}
-
 		opts := &api.QueryOptions{WaitIndex: n.waitIndex}
 		services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
-		state.err = err
-
-		if state.err == nil {
-			state.index = meta.LastIndex
-
-			state.ids = make([]string, len(services))
-			for i, service := range services {
-				state.ids[i] = service.ServiceID
-			}
-
-			// Sanity check
-			found := false
-			for _, id := range state.ids {
-				if id == n.serviceID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				state.err = fmt.Errorf("%s is not in the %s service list: %v", n.serviceID, n.serviceName, state.ids)
-			}
-		}
-
-		c <- state
+		c <- n.loadState(services, meta, err)
 	}()
 	return c
+}
+
+func (n *Node) loadState(services []*api.CatalogService, meta *api.QueryMeta, err error) (state tableState) {
+	state = tableState{err: err}
+
+	if err == nil {
+		state.index = meta.LastIndex
+
+		state.ids = make([]string, len(services))
+		for i, service := range services {
+			state.ids[i] = service.ServiceID
+		}
+
+		// Sanity check
+		if !state.contains(n.serviceID) {
+			state.err = fmt.Errorf("%s is not in the %s service list: %v", n.serviceID, n.serviceName, state.ids)
+		}
+	}
+
+	return state
 }
 
 func (n *Node) updateState(state tableState) {
