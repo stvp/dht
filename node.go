@@ -74,17 +74,17 @@ func Join(name, id string) (node *Node, err error) {
 
 	node.consul, err = api.NewClient(api.DefaultConfig())
 	if err != nil {
-		return nil, fmt.Errorf("can't create Consul API client: %s", err)
+		return nil, fmt.Errorf("dht: can't create Consul API client: %s", err)
 	}
 
 	node.checkListener, node.checkServer, err = newCheckListenerAndServer()
 	if err != nil {
-		return nil, fmt.Errorf("can't start HTTP server: %s", err)
+		return nil, fmt.Errorf("dht: can't start HTTP server: %s", err)
 	}
 
 	err = node.register()
 	if err != nil {
-		return nil, fmt.Errorf("can't register %s service: %s", node.serviceName, err)
+		return nil, fmt.Errorf("dht: can't register %s service: %s", node.serviceName, err)
 	}
 
 	go node.poll()
