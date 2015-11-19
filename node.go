@@ -2,6 +2,7 @@ package dht
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 const (
 	defaultCheckInterval = 5 * time.Second
+	defaultPollInterval  = time.Second
 )
 
 // Node is a single node in a distributed hash table that is coordinated using
@@ -58,14 +60,9 @@ func Join(name, id string) (node *Node, err error) {
 	}
 
 	if err == nil {
-		// Load the initial hash table state. fetchState will not block
+		// Load the initial hash table state. updateState will not block
 		// indefinitely because node.waitIndex is 0.
-		state := <-node.fetchState()
-		if state.err == nil {
-			node.updateState(state)
-		} else {
-			err = state.err
-		}
+		err = node.updateState()
 	}
 
 	if err == nil {
@@ -107,69 +104,55 @@ func (n *Node) register() (err error) {
 	return err
 }
 
-type tableState struct {
-	index uint64
-	ids   []string
-	err   error
-}
+func (n *Node) updateState() (err error) {
+	opts := &api.QueryOptions{WaitIndex: n.waitIndex}
+	services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
 
-func (s *tableState) contains(findID string) bool {
-	for _, id := range s.ids {
-		if id == findID {
-			return true
-		}
+	if err != nil {
+		return err
 	}
-	return false
+
+	ids, err := n.safeIDs(services)
+	if err != nil {
+		return err
+	}
+
+	n.hashTable = rendezvous.New(ids)
+	n.waitIndex = meta.LastIndex
+
+	return nil
 }
 
-func (n *Node) fetchState() (c chan tableState) {
-	c = make(chan tableState)
-	go func() {
-		opts := &api.QueryOptions{WaitIndex: n.waitIndex}
-		services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
-		c <- n.loadState(services, meta, err)
-	}()
-	return c
-}
+func (n *Node) safeIDs(services []*api.CatalogService) (ids []string, err error) {
+	ids = make([]string, len(services))
 
-func (n *Node) loadState(services []*api.CatalogService, meta *api.QueryMeta, err error) (state tableState) {
-	state = tableState{err: err}
-
-	if err == nil {
-		state.index = meta.LastIndex
-
-		state.ids = make([]string, len(services))
-		for i, service := range services {
-			state.ids[i] = service.ServiceID
-		}
-
-		// Sanity check
-		if !state.contains(n.serviceID) {
-			state.err = fmt.Errorf("%s is not in the %s service list: %v", n.serviceID, n.serviceName, state.ids)
+	var found bool
+	for i, service := range services {
+		ids[i] = service.ServiceID
+		if service.ServiceID == n.serviceID {
+			found = true
 		}
 	}
 
-	return state
-}
+	// Sanity check to ensure we're still a member of the hash table.
+	if !found {
+		err = fmt.Errorf("%s is not in the %s service list: %v", n.serviceID, n.serviceName, ids)
+	}
 
-func (n *Node) updateState(state tableState) {
-	n.hashTable = rendezvous.New(state.ids)
-	n.waitIndex = state.index
+	return ids, err
 }
 
 func (n *Node) pollState() {
-	var state tableState
+	var err error
 
 	for {
 		select {
 		case <-n.stop:
 			return
-		case state = <-n.fetchState():
-			if state.err == nil {
-				n.updateState(state)
-			} else {
-				// TODO how do we surface errors?
-				time.Sleep(time.Second)
+		case <-time.After(defaultPollInterval):
+			err = n.updateState()
+			if err != nil {
+				log.Printf("[dht %s %s] error: %s", n.serviceName, n.serviceID, err.Error())
 			}
 		}
 	}
@@ -177,8 +160,9 @@ func (n *Node) pollState() {
 
 // Owns returns true if the given key belongs to this Node in the distributed
 // hash table.
-func (n *Node) Owns(key string) bool {
-	return n.hashTable.Get(key) == n.serviceID
+func (n *Node) Owns(key string) (owns bool) {
+	owns = n.hashTable.Get(key) == n.serviceID
+	return owns
 }
 
 // Leave removes the Node from the distributed hash table by de-registering it

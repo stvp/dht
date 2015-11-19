@@ -19,14 +19,20 @@ func startConsul() (server *tempconsul.Server, err error) {
 	return server, server.Start()
 }
 
-func TestJoin(t *testing.T) {
+func servicesCount(name string) (count int, err error) {
+	services, _, err := apiClient().Catalog().Service(name, "", nil)
+	return len(services), err
+}
+
+func TestJoinLeave(t *testing.T) {
 	// No Consul agent
 	_, err := Join("test", "a")
-	urlErr := err.(*url.Error)
-	if urlErr == nil {
+	_, ok := err.(*url.Error)
+	if !ok {
 		t.Errorf("expected url.Error, got: %#v", err)
 	}
 
+	// Start Consul agent
 	server, err := startConsul()
 	if err != nil {
 		t.Fatal(err)
@@ -34,18 +40,31 @@ func TestJoin(t *testing.T) {
 	defer server.Term()
 
 	// Valid join
-	_, err = Join("test", "a")
+	node, err := Join("test", "a")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	services, _, err := apiClient().Catalog().Service("test", "", nil)
+	count, err := servicesCount("test")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if count != 1 {
+		t.Errorf("expected 1 service registered, got %d", count)
+	}
 
-	if len(services) != 1 {
-		t.Errorf("expected 1 service registered, got %d", len(services))
+	// Leave
+	err = node.Leave()
+	if err != nil {
+		t.Error(err)
+	}
+
+	count, err = servicesCount("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 service registered, got %d", count)
 	}
 }
 
@@ -67,11 +86,10 @@ func TestOwns(t *testing.T) {
 
 	// Ensure nodes have the latest state
 	for _, node := range nodes {
-		state := <-node.fetchState()
-		if state.err != nil {
+		err := node.updateState()
+		if err != nil {
 			t.Fatal(err)
 		}
-		node.updateState(state)
 	}
 
 	tests := []struct {
@@ -94,31 +112,12 @@ func TestOwns(t *testing.T) {
 			}
 		}
 	}
-}
 
-func TestLeave(t *testing.T) {
-	server, err := startConsul()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer server.Term()
-
-	node, err := Join("test", "a")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = node.Leave()
-	if err != nil {
-		t.Error(err)
-	}
-
-	services, _, err := apiClient().Catalog().Service("test", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(services) != 0 {
-		t.Errorf("expected 0 services, got %d", len(services))
+	// Clean up
+	for _, node := range nodes {
+		err = node.Leave()
+		if err != nil {
+			t.Error(err)
+		}
 	}
 }
