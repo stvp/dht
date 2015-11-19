@@ -158,11 +158,10 @@ func (n *Node) pollState() {
 	}
 }
 
-// Owns returns true if the given key belongs to this Node in the distributed
+// Member returns true if the given key belongs to this Node in the distributed
 // hash table.
-func (n *Node) Owns(key string) (owns bool) {
-	owns = n.hashTable.Get(key) == n.serviceID
-	return owns
+func (n *Node) Member(key string) bool {
+	return n.hashTable.Get(key) == n.serviceID
 }
 
 // Leave removes the Node from the distributed hash table by de-registering it

@@ -68,7 +68,7 @@ func TestJoinLeave(t *testing.T) {
 	}
 }
 
-func TestOwns(t *testing.T) {
+func TestMember(t *testing.T) {
 	server, err := startConsul()
 	if err != nil {
 		t.Fatal(err)
@@ -93,8 +93,8 @@ func TestOwns(t *testing.T) {
 	}
 
 	tests := []struct {
-		key  string
-		owns []bool
+		key    string
+		member []bool
 	}{
 		{"", []bool{true, false, false}},
 		{"a", []bool{true, false, false}},
@@ -105,10 +105,10 @@ func TestOwns(t *testing.T) {
 
 	for _, test := range tests {
 		for i, node := range nodes {
-			expect := test.owns[i]
-			got := node.Owns(test.key)
+			expect := test.member[i]
+			got := node.Member(test.key)
 			if got != expect {
-				t.Errorf("nodes[%d].Owns(%#v): expected %v, got %v", i, test.key, expect, got)
+				t.Errorf("nodes[%d].Member(%#v): expected %v, got %v", i, test.key, expect, got)
 			}
 		}
 	}
