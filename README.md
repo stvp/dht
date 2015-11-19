@@ -9,9 +9,10 @@ of key re-assignment.
 Local hash table state is refreshed in a background goroutine using blocking
 Consul API queries with the [default consistency mode][consul_api].
 
-`dht` requires a locally-running Consul agent with its HTTP API listening on
-`127.0.0.1:8500`. `dht` nodes run a simple HTTP server on an ephemeral port to
-allow Consul to periodically check that the node is still alive.
+`dht` requires a locally-running Consul agent (version 0.5.2 or newer) with its
+HTTP API listening on `127.0.0.1:8500`. `dht` nodes run a simple HTTP server on
+an ephemeral port to allow Consul to periodically check that the node is still
+alive.
 
 [wiki_dht]: https://en.wikipedia.org/wiki/Distributed_hash_table
 [wiki_rendez]: https://en.wikipedia.org/wiki/Rendezvous_hashing
