@@ -113,9 +113,9 @@ type tableState struct {
 	err   error
 }
 
-func (s *tableState) contains(id string) bool {
+func (s *tableState) contains(findID string) bool {
 	for _, id := range s.ids {
-		if id == id {
+		if id == findID {
 			return true
 		}
 	}
