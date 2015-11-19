@@ -16,18 +16,16 @@ const (
 )
 
 // Node is a single node in a distributed hash table that is coordinated using
-// services registered in Consul. Key membership by nodes is calculated using
-// rendezvous hashing to ensure even distribution and minimal key membership
-// changes when a node fails or leaves.
+// services registered in Consul. Key membership is calculated using rendezvous
+// hashing to ensure even distribution of keys and minimal key membership
+// changes when a Node fails or otherwise leaves the hash table.
 type Node struct {
-	// Consul service config
+	// Consul
 	serviceName string
 	serviceID   string
+	consul      *api.Client
 
-	// Consul agent client
-	consul *api.Client
-
-	// Consul HTTP health check server
+	// HTTP health check server
 	checkURL      string
 	checkListener net.Listener
 	checkServer   *http.Server
@@ -37,12 +35,13 @@ type Node struct {
 	hashTable *rendezvous.Table
 	waitIndex uint64
 
+	// Graceful shutdown
 	stop chan bool
 }
 
 // Join creates a new Node for a given service name and adds it to the
 // distributed hash table identified by the given name. The given id should be
-// unique among all other nodes with the same name.
+// unique among all Nodes in the hash table.
 func Join(name, id string) (node *Node, err error) {
 	node = &Node{
 		serviceName: name,
@@ -182,8 +181,11 @@ func (n *Node) Owns(key string) bool {
 	return n.hashTable.Get(key) == n.serviceID
 }
 
-// Leave removes this Node from the distributed hash table by de-registering it
-// from Consul. Once Leave is called, the Node should be discarded.
+// Leave removes the Node from the distributed hash table by de-registering it
+// from Consul. Once Leave is called, the Node should be discarded. An error is
+// returned if the Node is unable to successfully deregister itself from
+// Consul. In that case, Consul's health check for the Node will fail and
+// require manual cleanup.
 func (n *Node) Leave() (err error) {
 	close(n.stop) // stop polling for state
 	err = n.consul.Agent().ServiceDeregister(n.serviceID)
