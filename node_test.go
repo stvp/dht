@@ -67,7 +67,11 @@ func TestOwns(t *testing.T) {
 
 	// Ensure nodes have the latest state
 	for _, node := range nodes {
-		node.waitAndLoadState()
+		state := <-node.fetchState()
+		if state.err != nil {
+			t.Fatal(err)
+		}
+		node.updateState(state)
 	}
 
 	tests := []struct {

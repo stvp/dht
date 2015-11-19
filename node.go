@@ -61,9 +61,14 @@ func Join(name, id string) (node *Node, err error) {
 	}
 
 	if err == nil {
-		// This also initializes node.hashTable. waitAndLoadState will not block
-		// here because node.waitIndex is 0.
-		err = node.waitAndLoadState()
+		// Load the initial hash table state. fetchState will not block
+		// indefinitely because node.waitIndex is 0.
+		state := <-node.fetchState()
+		if state.err == nil {
+			node.updateState(state)
+		} else {
+			err = state.err
+		}
 	}
 
 	if err == nil {
@@ -105,53 +110,67 @@ func (n *Node) register() (err error) {
 	return err
 }
 
-// waitAndLoadState blocks until the service catalog changes or until the
-// agent's timeout is reached.
-func (n *Node) waitAndLoadState() (err error) {
-	opts := &api.QueryOptions{WaitIndex: n.waitIndex}
-	services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
-	if err != nil {
-		return err
-	}
+type tableState struct {
+	index uint64
+	ids   []string
+	err   error
+}
 
-	ids := make([]string, len(services))
-	for i, service := range services {
-		ids[i] = service.ServiceID
-	}
+func (n *Node) fetchState() (c chan tableState) {
+	c = make(chan tableState)
+	go func() {
+		state := tableState{}
 
-	// Sanity check
-	found := false
-	for _, id := range ids {
-		if id == n.serviceID {
-			found = true
-			break
+		opts := &api.QueryOptions{WaitIndex: n.waitIndex}
+		services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
+		state.err = err
+
+		if state.err == nil {
+			state.index = meta.LastIndex
+
+			state.ids = make([]string, len(services))
+			for i, service := range services {
+				state.ids[i] = service.ServiceID
+			}
+
+			// Sanity check
+			found := false
+			for _, id := range state.ids {
+				if id == n.serviceID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				state.err = fmt.Errorf("%s is not in the %s service list: %v", n.serviceID, n.serviceName, state.ids)
+			}
 		}
-	}
-	if !found {
-		return fmt.Errorf("%s is not in the %s service list: %v", n.serviceID, n.serviceName, ids)
-	}
 
+		c <- state
+	}()
+	return c
+}
+
+func (n *Node) updateState(state tableState) {
 	n.hashMutex.Lock()
-	n.hashTable = rendezvous.New(ids)
-	n.waitIndex = meta.LastIndex
+	n.hashTable = rendezvous.New(state.ids)
+	n.waitIndex = state.index
 	n.hashMutex.Unlock()
-
-	return nil
 }
 
 func (n *Node) pollState() {
-	var err error
+	var state tableState
 
 	for {
 		select {
 		case <-n.stop:
 			return
-		default:
-			// TODO how should we surface errors?
-			err = n.waitAndLoadState()
-			if err != nil {
-				// Don't flood the agent with requests if it's returning errors.
-				time.Sleep(2 * time.Second)
+		case state = <-n.fetchState():
+			if state.err == nil {
+				n.updateState(state)
+			} else {
+				// TODO how do we surface errors?
+				time.Sleep(time.Second)
 			}
 		}
 	}
