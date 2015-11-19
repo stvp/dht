@@ -134,9 +134,9 @@ func (n *Node) update() (err error) {
 		return err
 	}
 
-	ids, err := n.safeIDs(services)
-	if err != nil {
-		return err
+	ids := make([]string, len(services))
+	for i, service := range services {
+		ids[i] = service.ServiceID
 	}
 
 	n.hashTable = rendezvous.New(ids)
@@ -147,25 +147,6 @@ func (n *Node) update() (err error) {
 
 func (n *Node) logError(err error) {
 	log.Printf("[dht %s %s] error: %s", n.serviceName, n.serviceID, err)
-}
-
-func (n *Node) safeIDs(services []*api.CatalogService) (ids []string, err error) {
-	ids = make([]string, len(services))
-
-	var found bool
-	for i, service := range services {
-		ids[i] = service.ServiceID
-		if service.ServiceID == n.serviceID {
-			found = true
-		}
-	}
-
-	// Sanity check to ensure we're still a member of the hash table.
-	if !found {
-		err = fmt.Errorf("%s is not in the %s service list: %v", n.serviceID, n.serviceName, ids)
-	}
-
-	return ids, err
 }
 
 // Member returns true if the given key belongs to this Node in the distributed
