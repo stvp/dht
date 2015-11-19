@@ -87,6 +87,11 @@ func Join(name, id string) (node *Node, err error) {
 		return nil, fmt.Errorf("dht: can't register %s service: %s", node.serviceName, err)
 	}
 
+	err = node.update()
+	if err != nil {
+		return nil, fmt.Errorf("dht: can't fetch %s services list: %s", node.serviceName, err)
+	}
+
 	go node.poll()
 
 	return node, nil
@@ -105,35 +110,39 @@ func (n *Node) register() (err error) {
 }
 
 func (n *Node) poll() {
-	n.update()
+	var err error
+
 	for {
 		select {
 		case <-n.stop:
 			return
 		case <-time.After(pollWait):
-			n.update()
+			err = n.update()
+			if err != nil {
+				n.logError(err)
+			}
 		}
 	}
 }
 
 // update blocks until the service list changes or until the Consul agent's
 // timeout is reached.
-func (n *Node) update() {
+func (n *Node) update() (err error) {
 	opts := &api.QueryOptions{WaitIndex: n.waitIndex}
 	services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
 	if err != nil {
-		n.logError(err)
-		return
+		return err
 	}
 
 	ids, err := n.safeIDs(services)
 	if err != nil {
-		n.logError(err)
-		return
+		return err
 	}
 
 	n.hashTable = rendezvous.New(ids)
 	n.waitIndex = meta.LastIndex
+
+	return nil
 }
 
 func (n *Node) logError(err error) {
