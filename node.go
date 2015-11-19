@@ -13,64 +13,8 @@ import (
 
 const (
 	defaultCheckInterval = 5 * time.Second
-	defaultPollInterval  = time.Second
+	pollWait             = time.Second
 )
-
-// Node is a single node in a distributed hash table that is coordinated using
-// services registered in Consul. Key membership is calculated using rendezvous
-// hashing to ensure even distribution of keys and minimal key membership
-// changes when a Node fails or otherwise leaves the hash table.
-type Node struct {
-	// Consul
-	serviceName string
-	serviceID   string
-	consul      *api.Client
-
-	// HTTP health check server
-	checkURL      string
-	checkListener net.Listener
-	checkServer   *http.Server
-
-	// Hash table
-	hashTable *rendezvous.Table
-	waitIndex uint64
-
-	// Graceful shutdown
-	stop chan bool
-}
-
-// Join creates a new Node for a given service name and adds it to the
-// distributed hash table identified by the given name. The given id should be
-// unique among all Nodes in the hash table.
-func Join(name, id string) (node *Node, err error) {
-	node = &Node{
-		serviceName: name,
-		serviceID:   id,
-		stop:        make(chan bool),
-	}
-
-	node.consul, err = api.NewClient(api.DefaultConfig())
-
-	if err == nil {
-		node.checkListener, node.checkServer, err = newCheckListenerAndServer()
-	}
-
-	if err == nil {
-		err = node.register()
-	}
-
-	if err == nil {
-		// Load the initial hash table state. updateState will not block
-		// indefinitely because node.waitIndex is 0.
-		err = node.updateState()
-	}
-
-	if err == nil {
-		go node.pollState()
-	}
-
-	return node, err
-}
 
 func newCheckListenerAndServer() (listener net.Listener, server *http.Server, err error) {
 	listener, err = net.Listen("tcp", "127.0.0.1:0")
@@ -92,6 +36,62 @@ func newCheckListenerAndServer() (listener net.Listener, server *http.Server, er
 	return listener, server, err
 }
 
+// Node is a single node in a distributed hash table, coordinated using
+// services registered in Consul. Key membership is determined using rendezvous
+// hashing to ensure even distribution of keys and minimal key membership
+// changes when a Node fails or otherwise leaves the hash table.
+//
+// Errors encountered when making blocking GET requests to the Consul agent API
+// are logged using the log package.
+type Node struct {
+	// Consul
+	serviceName string
+	serviceID   string
+	consul      *api.Client
+
+	// HTTP health check server
+	checkURL      string
+	checkListener net.Listener
+	checkServer   *http.Server
+
+	// Hash table
+	hashTable *rendezvous.Table
+	waitIndex uint64
+
+	// Graceful shutdown
+	stop chan bool
+}
+
+// Join creates a new Node and adds it to the distributed hash table specified
+// by the given name. The given id should be unique among all Nodes in the hash
+// table.
+func Join(name, id string) (node *Node, err error) {
+	node = &Node{
+		serviceName: name,
+		serviceID:   id,
+		stop:        make(chan bool),
+	}
+
+	node.consul, err = api.NewClient(api.DefaultConfig())
+	if err != nil {
+		return nil, fmt.Errorf("can't create Consul API client: %s", err)
+	}
+
+	node.checkListener, node.checkServer, err = newCheckListenerAndServer()
+	if err != nil {
+		return nil, fmt.Errorf("can't start HTTP server: %s", err)
+	}
+
+	err = node.register()
+	if err != nil {
+		return nil, fmt.Errorf("can't register %s service: %s", node.serviceName, err)
+	}
+
+	go node.poll()
+
+	return node, nil
+}
+
 func (n *Node) register() (err error) {
 	err = n.consul.Agent().ServiceRegister(&api.AgentServiceRegistration{
 		Name: n.serviceName,
@@ -104,23 +104,40 @@ func (n *Node) register() (err error) {
 	return err
 }
 
-func (n *Node) updateState() (err error) {
+func (n *Node) poll() {
+	n.update()
+	for {
+		select {
+		case <-n.stop:
+			return
+		case <-time.After(pollWait):
+			n.update()
+		}
+	}
+}
+
+// update blocks until the service list changes or until the Consul agent's
+// timeout is reached.
+func (n *Node) update() {
 	opts := &api.QueryOptions{WaitIndex: n.waitIndex}
 	services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
-
 	if err != nil {
-		return err
+		n.logError(err)
+		return
 	}
 
 	ids, err := n.safeIDs(services)
 	if err != nil {
-		return err
+		n.logError(err)
+		return
 	}
 
 	n.hashTable = rendezvous.New(ids)
 	n.waitIndex = meta.LastIndex
+}
 
-	return nil
+func (n *Node) logError(err error) {
+	log.Printf("[dht %s %s] error: %s", n.serviceName, n.serviceID, err)
 }
 
 func (n *Node) safeIDs(services []*api.CatalogService) (ids []string, err error) {
@@ -140,22 +157,6 @@ func (n *Node) safeIDs(services []*api.CatalogService) (ids []string, err error)
 	}
 
 	return ids, err
-}
-
-func (n *Node) pollState() {
-	var err error
-
-	for {
-		select {
-		case <-n.stop:
-			return
-		case <-time.After(defaultPollInterval):
-			err = n.updateState()
-			if err != nil {
-				log.Printf("[dht %s %s] error: %s", n.serviceName, n.serviceID, err.Error())
-			}
-		}
-	}
 }
 
 // Member returns true if the given key belongs to this Node in the distributed

@@ -1,7 +1,6 @@
 package dht
 
 import (
-	"net/url"
 	"strconv"
 	"testing"
 
@@ -27,9 +26,8 @@ func servicesCount(name string) (count int, err error) {
 func TestJoinLeave(t *testing.T) {
 	// No Consul agent
 	_, err := Join("test", "a")
-	_, ok := err.(*url.Error)
-	if !ok {
-		t.Errorf("expected url.Error, got: %#v", err)
+	if err == nil {
+		t.Errorf("expected error got nil")
 	}
 
 	// Start Consul agent
@@ -86,10 +84,7 @@ func TestMember(t *testing.T) {
 
 	// Ensure nodes have the latest state
 	for _, node := range nodes {
-		err := node.updateState()
-		if err != nil {
-			t.Fatal(err)
-		}
+		node.update()
 	}
 
 	tests := []struct {
