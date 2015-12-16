@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	defaultCheckInterval = 5 * time.Second
-	pollWait             = time.Second
+	checkInterval = 5 * time.Second
+	pollWait      = time.Second
 )
 
 func newCheckListenerAndServer() (listener net.Listener, server *http.Server, err error) {
@@ -103,7 +103,7 @@ func (n *Node) register() (err error) {
 		ID:   n.serviceID,
 		Check: &api.AgentServiceCheck{
 			HTTP:     fmt.Sprintf("http://%s", n.checkListener.Addr().String()),
-			Interval: defaultCheckInterval.String(),
+			Interval: checkInterval.String(),
 		},
 	})
 	return err
