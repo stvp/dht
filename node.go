@@ -126,7 +126,7 @@ func (n *Node) poll() {
 }
 
 // update blocks until the service list changes or until the Consul agent's
-// timeout is reached.
+// timeout is reached (10 minutes by default).
 func (n *Node) update() (err error) {
 	opts := &api.QueryOptions{WaitIndex: n.waitIndex}
 	services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
