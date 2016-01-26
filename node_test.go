@@ -3,6 +3,7 @@ package dht
 import (
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/stvp/tempconsul"
@@ -82,8 +83,11 @@ func TestMember(t *testing.T) {
 		}
 	}
 
-	// Ensure nodes have the latest state
+	// Ensure nodes have the latest state. First we have to wait for consul
+	// to run all checks so that all services are "passing".
+	time.Sleep(checkInterval * 2)
 	for _, node := range nodes {
+		node.waitIndex = 0
 		node.update()
 	}
 

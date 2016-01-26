@@ -129,14 +129,14 @@ func (n *Node) poll() {
 // timeout is reached (10 minutes by default).
 func (n *Node) update() (err error) {
 	opts := &api.QueryOptions{WaitIndex: n.waitIndex}
-	services, meta, err := n.consul.Catalog().Service(n.serviceName, "", opts)
+	serviceEntries, meta, err := n.consul.Health().Service(n.serviceName, "", true, opts)
 	if err != nil {
 		return err
 	}
 
-	ids := make([]string, len(services))
-	for i, service := range services {
-		ids[i] = service.ServiceID
+	ids := make([]string, len(serviceEntries))
+	for i, entry := range serviceEntries {
+		ids[i] = entry.Service.ID
 	}
 
 	n.hashTable = rendezvous.New(ids)
